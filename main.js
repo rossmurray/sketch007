@@ -161,7 +161,8 @@ var fnMain = (function() {
             return result;
         }
         const neighborsTable = makeRange(25).map(x => makeNeighborList(x));
-        for(let i = 0; i < 17; i++) {
+        const rolls = Math.floor(Math.random() * gameState.modSetting * 4) + 4 * gameState.modSetting
+        for(let i = 0; i < rolls; i++) {
             const button = Math.floor(Math.random() * 25);
             const boardChoice = Math.floor(Math.random() * 3);
             pressButton(button, boards[boardChoice], neighborsTable, gameState);

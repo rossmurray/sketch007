@@ -11,10 +11,14 @@ var fnMain = (function() {
         const backgroundColor = colorStringToNumber('#eeeeee');
         const buttonPadding = 0.075; //total space allocated to padding, not per-button.
         const screenMargin = 0.02;
+        const modSetting = 3;
+        const randomPressProbability = 0.5;
         const config = {
             screenMargin: screenMargin,
             backgroundColor: backgroundColor,
             buttonPadding: buttonPadding,
+            modSetting: modSetting,
+            randomPressProbability: randomPressProbability,
         };
         return config;
     }
@@ -137,10 +141,10 @@ var fnMain = (function() {
         return sprite;
     }
 
-    function createGame(gameConfig) {
+    function createGame(config) {
         const gameState = {
             playerMoveMode: 0,
-            modSetting: 3,
+            modSetting: config.modSetting,
             moveCount: 0,
             boards: [],
         };
@@ -161,11 +165,18 @@ var fnMain = (function() {
             return result;
         }
         const neighborsTable = makeRange(25).map(x => makeNeighborList(x));
-        const rolls = Math.floor(Math.random() * gameState.modSetting * 4) + 4 * gameState.modSetting
-        for(let i = 0; i < rolls; i++) {
-            const button = Math.floor(Math.random() * 25);
-            const boardChoice = Math.floor(Math.random() * 3);
-            pressButton(button, boards[boardChoice], neighborsTable, gameState);
+
+        function randomizeBoard(boards, config) {
+            for(const board of boards) {
+                for(let cell = 0; cell < board.length; cell++) {
+                    if(Math.random() < config.randomPressProbability) {
+                        const press = Math.floor(Math.random() * (config.modSetting - 1)) + 1;
+                        for(let i = 0; i < press; i++) {
+                            pressButton(cell, board, neighborsTable, gameState);
+                        }
+                    }
+                }
+            }
         }
         function boardsToColors(boards, modSetting) {
             const toChannel = x => x / (modSetting - 1) * 255;
@@ -188,6 +199,7 @@ var fnMain = (function() {
             gameState.playerMoveMode += amount;
             gameState.playerMoveMode = gameState.playerMoveMode % 3;
         }
+        gameState.randomizeBoard = () => randomizeBoard(boards, config);
         gameState.getBoardColors = () => boardsToColors(boards, gameState.modSetting);
         gameState.pressButton = buttonNumber => pressButton(buttonNumber, boards[gameState.playerMoveMode], neighborsTable, gameState);
         gameState.increaseMoveMode = increaseMoveMode;
@@ -250,7 +262,8 @@ var fnMain = (function() {
         app.ticker.stop();
 
         let boardRect = makeBoardRectangle(config.screenMargin, app.screen);
-        const game = createGame();
+        const game = createGame(config);
+        game.randomizeBoard();
         const buttons = makeButtons(config, boardRect, app.renderer, game);
         const currentColors = game.getBoardColors();
         const background = makeBackground(config, app.screen, app.renderer);

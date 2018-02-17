@@ -1,3 +1,5 @@
+const difficulty = {easy: 0, medium: 1, hard: 2};
+
 var fnMain = (function() {
     function render(deltaMs, state) {
         requestAnimationFrame(function(timestamp){
@@ -11,14 +13,22 @@ var fnMain = (function() {
         const backgroundColor = colorStringToNumber('#eeeeee');
         const buttonPadding = 0.075; //total space allocated to padding, not per-button.
         const screenMargin = 0.02;
-        const modSetting = 3;
-        const randomPressProbability = 0.5;
+        const modSetting = 2;
+        const boardSideLength = 4;
+        const isTorus = false;
+        const randomDifficulty = difficulty.medium;
+        const autoIncrementMove = true;
+        const redBoardOnly = false;
         const config = {
             screenMargin: screenMargin,
             backgroundColor: backgroundColor,
             buttonPadding: buttonPadding,
             modSetting: modSetting,
-            randomPressProbability: randomPressProbability,
+            boardSideLength: boardSideLength,
+            randomDifficulty: randomDifficulty,
+            isTorus: isTorus,
+            autoIncrementMove: redBoardOnly ? false : autoIncrementMove,
+            redBoardOnly: redBoardOnly,
         };
         return config;
     }
@@ -141,81 +151,172 @@ var fnMain = (function() {
         return sprite;
     }
 
+    function makeNeighborList(centerNode, config) {
+        const totalButtons = config.boardSideLength * config.boardSideLength;
+        const sideLength = config.boardSideLength;
+        if(!(centerNode >= 0 && centerNode < totalButtons) || centerNode != Math.floor(centerNode)) {
+            throw "invalid centerNode value: [" + centerNode + "]";
+        }
+        let result = [centerNode];
+        const torusExtras = [];
+        const notTop = centerNode > sideLength - 1;
+        const notLeft = centerNode % sideLength != 0;
+        const notRight = centerNode % sideLength != sideLength - 1;
+        const notBottom = centerNode < totalButtons - sideLength;
+        if(notLeft) {
+            result.push(centerNode - 1);
+        }
+        else {
+            torusExtras.push(centerNode + sideLength - 1);
+        }
+        if(notRight) {
+            result.push(centerNode + 1);
+        }
+        else {
+            torusExtras.push(centerNode - sideLength + 1);
+        }
+        if(notTop) {
+            result.push(centerNode - sideLength);
+        }
+        else {
+            torusExtras.push(centerNode + totalButtons - sideLength);
+        }
+        if(notBottom) {
+            result.push(centerNode + sideLength);
+        }
+        else {
+            torusExtras.push(centerNode - totalButtons + sideLength);
+        }
+        if(config.isTorus == true) {
+            result = result.concat(torusExtras);
+        }
+        return result;
+    }
+
+    function triggerChange(state) {
+        if(state.onChange != undefined) {
+            state.onChange(state);
+        }
+    }
+
+    function zeroBoards(boards) {
+        for(let i = 0; i < boards.length; i++) {
+            const board = boards[i];
+            for(let j = 0; j < board.length; j++) {
+                board[j] = 0;
+            }
+        }
+    }
+
+    function randomizeBoard(gameState, config, neighborsTable) {
+        zeroBoards(gameState.boards);
+        const totalButtons = gameState.boards[0].length;
+        const difficultyRanges = [0.12, 0.25, 0.4, 0.6].map(x => Math.floor(x * totalButtons));
+        const buttonPressCount = config.randomDifficulty == difficulty.easy
+            ? randomIntInclusive(difficultyRanges[0] + 1, difficultyRanges[1])
+            : config.randomDifficulty == difficulty.medium
+            ? randomIntInclusive(difficultyRanges[1] + 1, difficultyRanges[2])
+            : randomIntInclusive(difficultyRanges[2] + 1, difficultyRanges[3]);
+        const pressesPerButton = [];
+        const pressCountOptions = makeRange(config.modSetting - 1).map(x => x + 1)
+        for(let i = 0; i < buttonPressCount; i++) {
+            pressesPerButton[i] = pressCountOptions[randomIntInclusive(0, pressCountOptions.length - 1)];
+        }
+        //if we press buttons N times, where N is a multiple of 3, then the player will always start on red.
+        const remainder = pressesPerButton.reduce((a,b) => a + b) % 3;
+        pressesPerButton[0] = (pressesPerButton[0] + (3 - remainder)) % 3;
+        const buttonBag = _.shuffle(makeRange(totalButtons)).slice(0, pressesPerButton.length);
+        for(let i = 0; i < buttonBag.length; i++) {
+            const cell = buttonBag[i];
+            const presses = pressesPerButton[i];
+            for(let j = 0; j < presses; j++) {
+                pressButton(cell, config, neighborsTable, gameState);
+            }
+        }
+        if(gameState.playerMoveMode != 0) {
+            throw "board randomization failed. playerMoveMode should be 0 at end. instead is: " + gameState.playerMoveMode;
+        }
+        gameState.currentPuzzle = gameState.boards.slice();
+    }
+
+    function boardsToColors(boards, modSetting) {
+        const toChannel = x => x / (modSetting - 1) * 255;
+        const colors = boards[0].map((x,i) => {
+            const r = toChannel(x);
+            const g = toChannel(boards[1][i]);
+            const b = toChannel(boards[2][i]);
+            return chromaToNumber(chroma(r,g,b));
+        });
+        return colors;
+    }
+
+    function pressButton(buttonNumber, config, neighborsTable, gameState) {
+        const boards = gameState.boards;
+        const board = config.redBoardOnly ? boards[0] : boards[gameState.playerMoveMode];
+        const neighbors = neighborsTable[buttonNumber];
+        for(let neighbor of neighbors) {
+            board[neighbor] = (board[neighbor] + 1) % gameState.modSetting;
+        }
+        gameState.moveCount += 1;
+        if(config.autoIncrementMove == true) {
+            increaseMoveMode(1, gameState);
+        }
+    }
+
+    function increaseMoveMode(amount, gameState) {
+        gameState.playerMoveMode += amount;
+        gameState.playerMoveMode = gameState.playerMoveMode % 3;
+    }
+
+    function resetPuzzle() {
+        gameState.moveCount = 0;
+        gameState.boards = gameState.currentPuzzle.slice();
+        gameState.playerMoveMode = 0;
+    }
+
     function createGame(config) {
         const gameState = {
             playerMoveMode: 0,
             modSetting: config.modSetting,
             moveCount: 0,
             boards: [],
+            onChange: undefined,
+            currentPuzzle: [],
         };
-        const board1 = makeRange(25).map(x => 0);
-        const board2 = makeRange(25).map(x => 0);
-        const board3 = makeRange(25).map(x => 0);
-        const boards = [board1, board2, board3];
-        gameState.boards = boards;
-        function makeNeighborList(centerNode) {
-            if(!(centerNode >= 0 && centerNode < 25) || centerNode != Math.floor(centerNode)) {
-                throw "invalid centerNode value: [" + centerNode + "]";
-            }
-            const result = [centerNode];
-            if(centerNode % 5 != 0) result.push(centerNode-1);
-            if(centerNode % 5 != 4) result.push(centerNode+1);
-            if(centerNode > 4) result.push(centerNode-5);
-            if(centerNode < 20) result.push(centerNode+5);
-            return result;
-        }
-        const neighborsTable = makeRange(25).map(x => makeNeighborList(x));
+        const totalButtons = config.boardSideLength * config.boardSideLength;
+        const sideLength = config.boardSideLength;
+        const board1 = makeRange(totalButtons).map(x => 0);
+        const board2 = makeRange(totalButtons).map(x => 0);
+        const board3 = makeRange(totalButtons).map(x => 0);
+        gameState.boards = [board1, board2, board3];
+        const neighborsTable = makeRange(totalButtons).map(x => makeNeighborList(x, config));
 
-        function randomizeBoard(boards, config) {
-            for(const board of boards) {
-                for(let cell = 0; cell < board.length; cell++) {
-                    if(Math.random() < config.randomPressProbability) {
-                        const press = Math.floor(Math.random() * (config.modSetting - 1)) + 1;
-                        for(let i = 0; i < press; i++) {
-                            pressButton(cell, board, neighborsTable, gameState);
-                        }
-                    }
-                }
-            }
-        }
-        function boardsToColors(boards, modSetting) {
-            const toChannel = x => x / (modSetting - 1) * 255;
-            const colors = boards[0].map((x,i) => {
-                const r = toChannel(x);
-                const g = toChannel(boards[1][i]);
-                const b = toChannel(boards[2][i]);
-                return chromaToNumber(chroma(r,g,b));
-            });
-            return colors;
-        }
-        function pressButton(buttonNumber, board, neighborsTable, gameState) {
-            const neighbors = neighborsTable[buttonNumber];
-            for(let neighbor of neighbors) {
-                board[neighbor] = (board[neighbor] + 1) % gameState.modSetting;
-            }
-            gameState.moveCount += 1;
-        }
-        function increaseMoveMode(amount) {
-            gameState.playerMoveMode += amount;
-            gameState.playerMoveMode = gameState.playerMoveMode % 3;
-        }
-        gameState.randomizeBoard = () => randomizeBoard(boards, config);
-        gameState.getBoardColors = () => boardsToColors(boards, gameState.modSetting);
-        gameState.pressButton = buttonNumber => pressButton(buttonNumber, boards[gameState.playerMoveMode], neighborsTable, gameState);
-        gameState.increaseMoveMode = increaseMoveMode;
+        gameState.randomizeBoard = () => {
+            randomizeBoard(gameState, config, neighborsTable);
+            triggerChange(gameState);
+        };
+        gameState.getBoardColors = () => boardsToColors(gameState.boards, gameState.modSetting);
+        gameState.pressButton = buttonNumber => {
+            pressButton(buttonNumber, config, neighborsTable, gameState);
+            triggerChange(gameState);
+        };
+        gameState.increaseMoveMode = x => increaseMoveMode(x, gameState);
+        gameState.resetPuzzle = () => {}; //todo
         return gameState;
     }
 
     function makeButtons(config, boardRect, renderer, game) {
-        const sprites = makeRange(25).map(i => {
-            const xIndex = i % 5;
-            const yIndex = Math.floor(i / 5);
+        const totalButtons = config.boardSideLength * config.boardSideLength;
+        const sideLength = config.boardSideLength;
+        const sprites = makeRange(totalButtons).map(i => {
+            const xIndex = i % sideLength;
+            const yIndex = Math.floor(i / sideLength);
             const minDimension = boardRect.width < boardRect.height ? boardRect.width : boardRect.height;
             const maxDimension = boardRect.width > boardRect.height ? boardRect.width : boardRect.height;
             const totalPadding = config.buttonPadding * minDimension;
-            const paddingBetweenButtons = Math.floor(totalPadding / 4); //none on the outside.
-            const buttonWidth = Math.floor((minDimension - totalPadding) / 5);
-            const actualUsedSpace = buttonWidth * 5 + paddingBetweenButtons * 4;
+            const paddingBetweenButtons = Math.floor(totalPadding / (sideLength - 1)); //none on the outside.
+            const buttonWidth = Math.floor((minDimension - totalPadding) / sideLength);
+            const actualUsedSpace = buttonWidth * sideLength + paddingBetweenButtons * (sideLength - 1);
             const xMargin = Math.floor((boardRect.width - actualUsedSpace) / 2);
             const yMargin = Math.floor((boardRect.height - actualUsedSpace) / 2);
             const obj = {
@@ -244,6 +345,15 @@ var fnMain = (function() {
         }
     }
 
+    function redrawBoard(sprites, game) {
+        const newColors = game.getBoardColors();
+        for(let i = 0; i < newColors.length; i++) {
+            if(sprites[i]) {
+                sprites[i].tint = newColors[i];
+            }
+        }
+    }
+
     return (function() {
         const config = getConfig();
         const mainel = document.getElementById("main");
@@ -257,7 +367,6 @@ var fnMain = (function() {
         });
         app.renderer.backgroundColor = config.backgroundColor;
         app.renderer.render(app.stage);
-        //note: this prevents ticker starting when a listener is added. not when the application starts.
         app.ticker.autoStart = false;
         app.ticker.stop();
 
@@ -270,14 +379,15 @@ var fnMain = (function() {
         //app.stage.addChild(background);
         for(let i = 0; i < buttons.length; i++) {
             const b = buttons[i];
-            b.on('pointerdown', () => buttonClicked(i, buttons, game));
+            b.on('pointerdown', () => game.pressButton(i));
             b.tint = currentColors[i];
             app.stage.addChild(b);
         }
+        game.onChange = newstate => redrawBoard(buttons, game);
         const rightKey = makeKeyHandler(39);
         const leftKey = makeKeyHandler(37);
-        rightKey.onUp = () => game.increaseMoveMode(1);
-        leftKey.onUp = () => game.increaseMoveMode(2);
+        rightKey.onUp = () => { if(!config.autoIncrementMove) game.increaseMoveMode(1); };
+        leftKey.onUp = () => { if(!config.autoIncrementMove) game.increaseMoveMode(2); };
         const animation = {};
         let state = {
             config: config,

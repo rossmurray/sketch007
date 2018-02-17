@@ -24,7 +24,11 @@
   <script src="lib/pixi.min.js"></script>
   <script src="lib/anime.min.js"></script>
   <script src="lib/chroma.min.js"></script>
+  <script src="lib/dat.gui.min.js"></script>
+  <script src="lib/lodash.min.js"></script>
 <body>
+  <div id="controls">
+  </div>
   <canvas id="main"></canvas>
   <script type="text/javascript">
     (function(){
@@ -37,7 +41,16 @@
   </script>
   <script type="text/javascript" src="main.js"></script>
   <script type="text/javascript">
-    fnMain();
+    const ctrl = fnMain();
+    //random puzzle
+    //reset puzzle
+    //onWin event
+    //basic / advanced (mod 2 or mod 3)
+    //onModeChange event
+    //set board length
+    //on a torus checkbox
+    const gui = new dat.GUI();
+    gui.add(ctrl.game, 'randomizeBoard');
   </script>
 </body>
 </html>

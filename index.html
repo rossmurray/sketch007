@@ -41,7 +41,12 @@
   </script>
   <script type="text/javascript" src="main.js"></script>
   <script type="text/javascript">
-    const ctrl = fnMain();
+    const config = {
+      modSetting: 2,
+      boardSideLength: 5,
+      isTorus: false,
+    };
+    const ctrl = fnMain(config);
     //random puzzle
     //reset puzzle
     //onWin event
@@ -50,7 +55,31 @@
     //set board length
     //on a torus checkbox
     const gui = new dat.GUI();
-    gui.add(ctrl.game, 'randomizeBoard');
+    const proxy = {
+      colorSteps: config.modSetting,
+      boardSize: config.boardSideLength,
+      reset: () => ctrl.gameCtrl.reset(),
+    };
+    proxy.new = () => {
+      config.modSetting = proxy.colorSteps;
+      config.boardSideLength = proxy.boardSize;
+      ctrl.gameCtrl.new(config);
+    };
+    // const bindProxy = (p, game) => {
+    //   p.new = () => {
+    //     config.modSetting = p.colorSteps;
+    //     config.boardSideLength = p.boardSize;
+    //     const g = game.remakeGame(config);
+    //     bindProxy(p, g);
+    //   };
+    //   p.reset = game.resetPuzzle;
+    // };
+    // bindProxy(proxy, ctrl.game);
+    //gui.add(ctrl.game, 'randomizeBoard');
+    gui.add(proxy, 'new');
+    gui.add(proxy, 'reset');
+    gui.add(proxy, 'colorSteps', 2, 3).step(1);
+    gui.add(proxy, 'boardSize', 4, 6).step(1);
   </script>
 </body>
 </html>

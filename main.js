@@ -1,10 +1,12 @@
 const difficulty = {easy: 0, medium: 1, hard: 2};
+const tempCache = [];
 
 var fnMain = (function() {
     function render(deltaMs, state) {
         requestAnimationFrame(function(timestamp){
             render(timestamp, state);
         });
+        mainUpdate(deltaMs, state);
         state.app.renderer.render(state.app.stage);
         state.recorder.capture(state.app.renderer.view);
     }
@@ -121,18 +123,6 @@ var fnMain = (function() {
         return state;
     }
 
-    function makeBackground(config, screenRect, renderer) {
-        const canvasElement = document.createElement('canvas');
-        canvasElement.width = screenRect.width;
-        canvasElement.height = screenRect.height;
-        const context = canvasElement.getContext('2d');
-        context.fillStyle = config.backgroundColor;
-        context.fillRect(0, 0, screenRect.width, screenRect.height);
-        const texture = PIXI.Texture.fromCanvas(canvasElement);
-        const sprite = new PIXI.Sprite(texture);
-        return sprite;
-    }
-
     function mapSprite(obj, renderer) {
         const width = obj.width;
         const height = obj.height;
@@ -148,6 +138,7 @@ var fnMain = (function() {
         const sprite = new PIXI.Sprite(texture);
         sprite.x = obj.x;
         sprite.y = obj.y;
+        tempCache.push(sprite);
         return sprite;
     }
 
@@ -210,6 +201,7 @@ var fnMain = (function() {
 
     function randomizeBoard(gameState, config, neighborsTable) {
         zeroBoards(gameState.boards);
+        gameState.playerMoveMode = 0;
         const totalButtons = gameState.boards[0].length;
         const difficultyRanges = [0.12, 0.25, 0.4, 0.6].map(x => Math.floor(x * totalButtons));
         const buttonPressCount = config.randomDifficulty == difficulty.easy
@@ -236,7 +228,8 @@ var fnMain = (function() {
         if(gameState.playerMoveMode != 0) {
             throw "board randomization failed. playerMoveMode should be 0 at end. instead is: " + gameState.playerMoveMode;
         }
-        gameState.currentPuzzle = gameState.boards.slice();
+        saveBoard(gameState);
+        gameState.moveCount = 0;
     }
 
     function boardsToColors(boards, modSetting) {
@@ -268,44 +261,61 @@ var fnMain = (function() {
         gameState.playerMoveMode = gameState.playerMoveMode % 3;
     }
 
-    function resetPuzzle() {
-        gameState.moveCount = 0;
-        gameState.boards = gameState.currentPuzzle.slice();
-        gameState.playerMoveMode = 0;
+    function saveBoard(gameState) {
+        gameState.currentPuzzle = [];
+        for(let board of gameState.boards) {
+            gameState.currentPuzzle.push(board.slice());
+        }
     }
 
-    function createGame(config) {
-        const gameState = {
-            playerMoveMode: 0,
-            modSetting: config.modSetting,
-            moveCount: 0,
-            boards: [],
-            onChange: undefined,
-            currentPuzzle: [],
-        };
+    function loadBoard(gameState) {
+        gameState.boards = [];
+        for(let board of gameState.currentPuzzle) {
+            gameState.boards.push(board.slice());
+        }
+    }
+
+    function resetPuzzle(gameState) {
+        loadBoard(gameState);
+        gameState.playerMoveMode = 0;
+        gameState.moveCount = 0;
+    }
+
+    function createGame(game, config) {
+        game.playerMoveMode = 0;
+        game.modSetting = config.modSetting;
+        game.moveCount = 0;
+        game.boards = [];
+        game.onChange = undefined;
+        game.currentPuzzle = [];
+        game.needsRemaking = false;
+
         const totalButtons = config.boardSideLength * config.boardSideLength;
         const sideLength = config.boardSideLength;
         const board1 = makeRange(totalButtons).map(x => 0);
         const board2 = makeRange(totalButtons).map(x => 0);
         const board3 = makeRange(totalButtons).map(x => 0);
-        gameState.boards = [board1, board2, board3];
+        game.boards = [board1, board2, board3];
         const neighborsTable = makeRange(totalButtons).map(x => makeNeighborList(x, config));
 
-        gameState.randomizeBoard = () => {
-            randomizeBoard(gameState, config, neighborsTable);
-            triggerChange(gameState);
+        game.randomizeBoard = () => {
+            randomizeBoard(game, config, neighborsTable);
+            triggerChange(game);
         };
-        gameState.getBoardColors = () => boardsToColors(gameState.boards, gameState.modSetting);
-        gameState.pressButton = buttonNumber => {
-            pressButton(buttonNumber, config, neighborsTable, gameState);
-            triggerChange(gameState);
+        game.getBoardColors = () => boardsToColors(game.boards, game.modSetting);
+        game.pressButton = buttonNumber => {
+            pressButton(buttonNumber, config, neighborsTable, game);
+            triggerChange(game);
         };
-        gameState.increaseMoveMode = x => increaseMoveMode(x, gameState);
-        gameState.resetPuzzle = () => {}; //todo
-        return gameState;
+        game.increaseMoveMode = x => increaseMoveMode(x, game);
+        game.resetPuzzle = () => {
+            resetPuzzle(game);
+            triggerChange(game);
+        }
+        return game;
     }
 
-    function makeButtons(config, boardRect, renderer, game) {
+    function makeButtons(config, boardRect, renderer) {
         const totalButtons = config.boardSideLength * config.boardSideLength;
         const sideLength = config.boardSideLength;
         const sprites = makeRange(totalButtons).map(i => {
@@ -345,7 +355,7 @@ var fnMain = (function() {
         }
     }
 
-    function redrawBoard(sprites, game) {
+    function recolorButtons(sprites, game) {
         const newColors = game.getBoardColors();
         for(let i = 0; i < newColors.length; i++) {
             if(sprites[i]) {
@@ -354,8 +364,57 @@ var fnMain = (function() {
         }
     }
 
-    return (function() {
+    function remakeGame(game, boardRect, renderer, stage) {
+        if(game.sprites) {
+            for(let s of game.sprites) {
+                stage.removeChild(s);
+                s.destroy();
+            }
+        }
+        const newConfig = game.newConfig;
         const config = getConfig();
+        Object.assign(config, newConfig);
+        createGame(game, config);
+        game.randomizeBoard();
+        game.remakeGame = () => { return remakeGame(game, boardRect, renderer, stage); };
+
+        const oldSprites = stage.children;
+        const buttons = makeButtons(config, boardRect, renderer);
+        game.sprites = buttons;
+        game.onChange = newstate => recolorButtons(buttons, game);
+        const currentColors = game.getBoardColors();
+        for(let i = 0; i < buttons.length; i++) {
+            const b = buttons[i];
+            b.removeAllListeners();
+            b.on('pointerdown', () => game.pressButton(i));
+            b.tint = currentColors[i];
+            stage.addChild(b);
+        }
+        return game;
+    }
+
+    function publishGame(game) {
+        const proxy = {
+            new: (newConfig) => {
+                game.needsRemaking = true;
+                if(newConfig) {
+                    game.newConfig = newConfig;
+                }
+            },
+            reset: () => game.resetPuzzle(),
+        };
+        return proxy;
+    }
+
+    function mainUpdate(deltaMs, state) {
+        if(state.game.needsRemaking == true) {
+            const newGame = state.game.remakeGame();
+        }
+    }
+
+    return (function(userConfig) {
+        const config = getConfig();
+        Object.assign(config, userConfig);
         const mainel = document.getElementById("main");
         let app = new PIXI.Application({
             width: mainel.width,
@@ -371,39 +430,27 @@ var fnMain = (function() {
         app.ticker.stop();
 
         let boardRect = makeBoardRectangle(config.screenMargin, app.screen);
-        const game = createGame(config);
-        game.randomizeBoard();
-        const buttons = makeButtons(config, boardRect, app.renderer, game);
-        const currentColors = game.getBoardColors();
-        const background = makeBackground(config, app.screen, app.renderer);
-        //app.stage.addChild(background);
-        for(let i = 0; i < buttons.length; i++) {
-            const b = buttons[i];
-            b.on('pointerdown', () => game.pressButton(i));
-            b.tint = currentColors[i];
-            app.stage.addChild(b);
-        }
-        game.onChange = newstate => redrawBoard(buttons, game);
-        const rightKey = makeKeyHandler(39);
-        const leftKey = makeKeyHandler(37);
-        rightKey.onUp = () => { if(!config.autoIncrementMove) game.increaseMoveMode(1); };
-        leftKey.onUp = () => { if(!config.autoIncrementMove) game.increaseMoveMode(2); };
-        const animation = {};
+        const game = {newConfig: config};
+        remakeGame(game, boardRect, app.renderer, app.stage);
+        const gameCtrl = publishGame(game);
         let state = {
             config: config,
             app: app,
-            boardRect: boardRect,
-            animation: animation,
             game: game,
-            buttons: buttons,
-            background: background,
+            boardRect: boardRect,
+            gameCtrl: gameCtrl,
+            recorder: config.recorder || {capture: function(){}},
         };
-        return function(recorder) {
-            state.recorder = recorder || {capture: function(){}};
-            app.start();
-            render(Date.now(), state);
-            //animation.play();
-            return state;
-        }
-    })();
+        
+        
+        //todo: move these
+        // const rightKey = makeKeyHandler(39);
+        // const leftKey = makeKeyHandler(37);
+        // rightKey.onUp = () => { if(!config.autoIncrementMove) game.increaseMoveMode(1); };
+        // leftKey.onUp = () => { if(!config.autoIncrementMove) game.increaseMoveMode(2); };
+        
+        app.start();
+        render(Date.now(), state);
+        return state;
+    });
 })();

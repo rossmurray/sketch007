@@ -47,6 +47,7 @@
         quality: 90,
       };
       const recorder = new CCapture(captureConfig);
+      const config = {recorder: recorder};
       const canvas = document.getElementById('main');
       const recordButton = document.getElementById('recordButton');
       recordButton.onclick = function() {
@@ -54,11 +55,11 @@
       };
       const startButton = document.getElementById('startButton');
       startButton.onclick = function() {
-        window.fnMain(recorder)
+        window.fnMain(config)
       };
       const bothButton = document.getElementById('bothButton');
       bothButton.onclick = function() {
-        window.fnMain(recorder);
+        window.fnMain(config);
         recordAndDownload(recorder, timeLimit);
       };
 

@@ -27,8 +27,6 @@
   <script src="lib/dat.gui.min.js"></script>
   <script src="lib/lodash.min.js"></script>
 <body>
-  <div id="controls">
-  </div>
   <canvas id="main"></canvas>
   <script type="text/javascript">
     (function(){
@@ -45,8 +43,10 @@
       modSetting: 2,
       boardSideLength: 5,
       isTorus: false,
+      randomDifficulty: 1,
     };
     const ctrl = fnMain(config);
+
     //random puzzle
     //reset puzzle
     //onWin event
@@ -58,28 +58,38 @@
     const proxy = {
       colorSteps: config.modSetting,
       boardSize: config.boardSideLength,
+      difficulty: config.randomDifficulty,
+      torus: config.isTorus,
       reset: () => ctrl.gameCtrl.reset(),
     };
     proxy.new = () => {
       config.modSetting = proxy.colorSteps;
       config.boardSideLength = proxy.boardSize;
+      config.randomDifficulty = proxy.difficulty;
+      config.isTorus = proxy.torus;
       ctrl.gameCtrl.new(config);
     };
-    // const bindProxy = (p, game) => {
-    //   p.new = () => {
-    //     config.modSetting = p.colorSteps;
-    //     config.boardSideLength = p.boardSize;
-    //     const g = game.remakeGame(config);
-    //     bindProxy(p, g);
-    //   };
-    //   p.reset = game.resetPuzzle;
-    // };
-    // bindProxy(proxy, ctrl.game);
-    //gui.add(ctrl.game, 'randomizeBoard');
     gui.add(proxy, 'new');
     gui.add(proxy, 'reset');
     gui.add(proxy, 'colorSteps', 2, 3).step(1);
     gui.add(proxy, 'boardSize', 4, 6).step(1);
+    gui.add(proxy, 'difficulty', {easy: 0, medium: 1, hard: 2});
+    gui.add(proxy, 'torus');
+    const el = document.querySelector('body div.main');
+    const modeIndicator = document.createElement("div");
+    modeIndicator.style = "background-color: red; width: 245px; height: 20px; top: 20px; position: relative;";
+    el.appendChild(modeIndicator);
+    //ctrl.gameCtrl.onWin = () => alert("you win");
+    ctrl.gameCtrl.onModeChange = newMode => {
+      modeIndicator.style.backgroundColor = 
+        newMode == 0 ?
+          'red' :
+        newMode == 1 ?
+          'green' :
+        newMode == 2 ?
+          'blue'
+        : 'magenta';
+      };
   </script>
 </body>
 </html>

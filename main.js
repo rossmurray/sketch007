@@ -9,6 +9,7 @@ var fnMain = (function() {
         mainUpdate(deltaMs, state);
         state.app.renderer.render(state.app.stage);
         state.recorder.capture(state.app.renderer.view);
+        checkWin(state.game);
     }
 
     function getConfig() {
@@ -243,6 +244,27 @@ var fnMain = (function() {
         return colors;
     }
 
+    function checkWin(game) {
+        if(game.isOver) return;
+        for(let board of game.boards) {
+            for(let cell of board) {
+                if(cell != 0) {
+                    return;
+                }
+            }
+        }
+        if(game.onWin) {
+            game.isOver = true;
+            game.onWin();
+        }
+    }
+
+    function notifyModechange(game) {
+        if(game.onModeChange) {
+            game.onModeChange(game.playerMoveMode);
+        }
+    }
+
     function pressButton(buttonNumber, config, neighborsTable, gameState) {
         const boards = gameState.boards;
         const board = config.redBoardOnly ? boards[0] : boards[gameState.playerMoveMode];
@@ -259,6 +281,7 @@ var fnMain = (function() {
     function increaseMoveMode(amount, gameState) {
         gameState.playerMoveMode += amount;
         gameState.playerMoveMode = gameState.playerMoveMode % 3;
+        notifyModechange(gameState);
     }
 
     function saveBoard(gameState) {
@@ -279,6 +302,7 @@ var fnMain = (function() {
         loadBoard(gameState);
         gameState.playerMoveMode = 0;
         gameState.moveCount = 0;
+        notifyModechange(gameState);
     }
 
     function createGame(game, config) {
@@ -289,6 +313,7 @@ var fnMain = (function() {
         game.onChange = undefined;
         game.currentPuzzle = [];
         game.needsRemaking = false;
+        game.isOver = false;
 
         const totalButtons = config.boardSideLength * config.boardSideLength;
         const sideLength = config.boardSideLength;
@@ -347,12 +372,7 @@ var fnMain = (function() {
 
     function buttonClicked(buttonIndex, sprites, game) {
         game.pressButton(buttonIndex);
-        const newColors = game.getBoardColors();
-        for(let i = 0; i < newColors.length; i++) {
-            if(sprites[i]) {
-                sprites[i].tint = newColors[i];
-            }
-        }
+        recolorButtons(sprites, game);
     }
 
     function recolorButtons(sprites, game) {
@@ -402,7 +422,11 @@ var fnMain = (function() {
                 }
             },
             reset: () => game.resetPuzzle(),
+            onWin: null,
+            onModeChange: null,
         };
+        game.onWin = () => proxy.onWin();
+        game.onModeChange = () => proxy.onModeChange(game.playerMoveMode);
         return proxy;
     }
 

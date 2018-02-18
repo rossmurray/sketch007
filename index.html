@@ -46,14 +46,6 @@
       randomDifficulty: 1,
     };
     const ctrl = fnMain(config);
-
-    //random puzzle
-    //reset puzzle
-    //onWin event
-    //basic / advanced (mod 2 or mod 3)
-    //onModeChange event
-    //set board length
-    //on a torus checkbox
     const gui = new dat.GUI();
     const proxy = {
       colorSteps: config.modSetting,
@@ -71,10 +63,10 @@
     };
     gui.add(proxy, 'new');
     gui.add(proxy, 'reset');
-    gui.add(proxy, 'colorSteps', 2, 3).step(1);
-    gui.add(proxy, 'boardSize', 4, 6).step(1);
-    gui.add(proxy, 'difficulty', {easy: 0, medium: 1, hard: 2});
-    gui.add(proxy, 'torus');
+    gui.add(proxy, 'colorSteps', 2, 3).step(1).onFinishChange(x => proxy.new());
+    gui.add(proxy, 'boardSize', 4, 6).step(1).onFinishChange(x => proxy.new());
+    gui.add(proxy, 'difficulty', {easy: 0, medium: 1, hard: 2}).onFinishChange(x => proxy.new());
+    gui.add(proxy, 'torus').onFinishChange(x => proxy.new());
     const el = document.querySelector('body div.main');
     const modeIndicator = document.createElement("div");
     modeIndicator.style = "background-color: red; width: 245px; height: 20px; top: 20px; position: relative;";

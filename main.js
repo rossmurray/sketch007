@@ -185,12 +185,6 @@ var fnMain = (function() {
         return result;
     }
 
-    function triggerChange(state) {
-        if(state.onChange != undefined) {
-            state.onChange(state);
-        }
-    }
-
     function zeroBoards(boards) {
         for(let i = 0; i < boards.length; i++) {
             const board = boards[i];
@@ -310,7 +304,6 @@ var fnMain = (function() {
         game.modSetting = config.modSetting;
         game.moveCount = 0;
         game.boards = [];
-        game.onChange = undefined;
         game.currentPuzzle = [];
         game.needsRemaking = false;
         game.isOver = false;
@@ -325,17 +318,17 @@ var fnMain = (function() {
 
         game.randomizeBoard = () => {
             randomizeBoard(game, config, neighborsTable);
-            triggerChange(game);
+            recolorButtons(game);
         };
         game.getBoardColors = () => boardsToColors(game.boards, game.modSetting);
         game.pressButton = buttonNumber => {
             pressButton(buttonNumber, config, neighborsTable, game);
-            triggerChange(game);
+            recolorButtons(game);
         };
         game.increaseMoveMode = x => increaseMoveMode(x, game);
         game.resetPuzzle = () => {
             resetPuzzle(game);
-            triggerChange(game);
+            recolorButtons(game);
         }
         return game;
     }
@@ -370,12 +363,8 @@ var fnMain = (function() {
         return sprites;
     }
 
-    function buttonClicked(buttonIndex, sprites, game) {
-        game.pressButton(buttonIndex);
-        recolorButtons(sprites, game);
-    }
-
-    function recolorButtons(sprites, game) {
+    function recolorButtons(game) {
+        const sprites = game.sprites || [];
         const newColors = game.getBoardColors();
         for(let i = 0; i < newColors.length; i++) {
             if(sprites[i]) {
@@ -384,32 +373,48 @@ var fnMain = (function() {
         }
     }
 
-    function remakeGame(game, boardRect, renderer, stage) {
-        if(game.sprites) {
-            for(let s of game.sprites) {
-                stage.removeChild(s);
-                s.destroy();
-            }
-        }
-        const newConfig = game.newConfig;
-        const config = getConfig();
-        Object.assign(config, newConfig);
-        createGame(game, config);
-        game.randomizeBoard();
-        game.remakeGame = () => { return remakeGame(game, boardRect, renderer, stage); };
+    function resizeGame(newX, newY, game, config, app) {
+        const stage = app.stage;
+        const renderer = app.renderer;
+        const appScreen = app.screen;
+        app.width = newX;
+        app.height = newY;
+        app.renderer.resize(newX, newY);
+        replaceSprites(game, config, app);
+    }
 
-        const oldSprites = stage.children;
-        const buttons = makeButtons(config, boardRect, renderer);
+    function replaceSprites(game, config, app) {
+        const oldSprites = game.sprites || [];
+        for(let s of oldSprites) {
+            app.stage.removeChild(s);
+            s.destroy();
+        }
+        const boardRect = makeBoardRectangle(config.screenMargin, app.screen);
+        game.boardRect = boardRect;
+        const buttons = makeButtons(config, boardRect, app.renderer);
         game.sprites = buttons;
-        game.onChange = newstate => recolorButtons(buttons, game);
         const currentColors = game.getBoardColors();
         for(let i = 0; i < buttons.length; i++) {
             const b = buttons[i];
             b.removeAllListeners();
             b.on('pointerdown', () => game.pressButton(i));
             b.tint = currentColors[i];
-            stage.addChild(b);
+            app.stage.addChild(b);
         }
+    }
+
+    function remakeGame(game, config, app) {
+        const stage = app.stage;
+        const renderer = app.renderer;
+        const newConfig = game.newConfig;
+        if(newConfig) {
+            Object.assign(config, newConfig);
+        }
+        createGame(game, config);
+        replaceSprites(game, config, app);
+        game.randomizeBoard();
+        game.remakeGame = () => { return remakeGame(game, config, app); };
+        game.resize = (x,y) => resizeGame(x, y, game, config, app);
         return game;
     }
 
@@ -424,6 +429,7 @@ var fnMain = (function() {
             reset: () => game.resetPuzzle(),
             onWin: null,
             onModeChange: null,
+            resize: (x,y) => game.resize(x, y),
         };
         game.onWin = () => proxy.onWin();
         game.onModeChange = () => proxy.onModeChange(game.playerMoveMode);
@@ -433,6 +439,9 @@ var fnMain = (function() {
     function mainUpdate(deltaMs, state) {
         if(state.game.needsRemaking == true) {
             const newGame = state.game.remakeGame();
+        }
+        if(state.game.needsResizing == true) {
+
         }
     }
 
@@ -453,15 +462,13 @@ var fnMain = (function() {
         app.ticker.autoStart = false;
         app.ticker.stop();
 
-        let boardRect = makeBoardRectangle(config.screenMargin, app.screen);
         const game = {newConfig: config};
-        remakeGame(game, boardRect, app.renderer, app.stage);
+        remakeGame(game, config, app); //boardRect, app.renderer, app.stage);
         const gameCtrl = publishGame(game);
         let state = {
             config: config,
             app: app,
             game: game,
-            boardRect: boardRect,
             gameCtrl: gameCtrl,
             recorder: config.recorder || {capture: function(){}},
         };
